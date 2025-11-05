@@ -40,3 +40,23 @@
         "--max-depth", "2",
         "--filter", ""
       ],
+
+# Этап 5
+## циклический граф
+"args": [
+        "--package", "B",
+        "--repo-url", "${workspaceFolder}/repo.json",
+        "--repo-mode", "local",
+        "--output-file", "graph.svg",
+        "--max-depth", "3",
+        "--filter", ""
+      ],
+## дерево
+"args": [
+        "--package", "F",
+        "--repo-url", "${workspaceFolder}/repo.json",
+        "--repo-mode", "local",
+        "--output-file", "graph.svg",
+        "--max-depth", "2",
+        "--filter", ""
+      ],

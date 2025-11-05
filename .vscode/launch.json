@@ -7,11 +7,11 @@
       "request": "launch",
       "program": "${workspaceFolder}/visualizer.py",
       "args": [
-        "--package", "A",
+        "--package", "L",
         "--repo-url", "${workspaceFolder}/repo.json",
         "--repo-mode", "local",
-        "--output-file", "graph.png",
-        "--max-depth", "2",
+        "--output-file", "graph.svg",
+        "--max-depth", "10",
         "--filter", ""
       ],
       "console": "integratedTerminal"

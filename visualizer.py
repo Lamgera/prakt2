@@ -2,36 +2,26 @@ import argparse
 import sys
 import json
 import os
+import subprocess
 
 def parse_args():
     parser = argparse.ArgumentParser(
         prog="DependencyGraphVisualizer",
-        description="Этап 4: прямые и обратные зависимости."
+        description="Этап 5: визуализация графа зависимостей в формате D2/SVG."
     )
     parser.add_argument('--package', required=True)
     parser.add_argument('--repo-url', required=True)
     parser.add_argument('--repo-mode', required=True, choices=['remote', 'local'])
-    parser.add_argument('--output-file', required=True)
+    parser.add_argument('--output-file', required=True)  # например, graph.svg
     parser.add_argument('--max-depth', type=int, required=True)
     parser.add_argument(
-    '--filter',
-    nargs='?',
-    const='',
-    default='',
-    help="Подстрока для фильтрации пакетов (по умолчанию: '').")
-
-    args = parser.parse_args()
-
-    if args.max_depth < 0:
-        print("--max-depth не может быть отрицательным.", file=sys.stderr)
-        sys.exit(1)
-    if args.repo_mode == 'remote':
-        print("Режим 'remote' не поддерживается. Используйте 'local'.", file=sys.stderr)
-        sys.exit(1)
-    if not os.path.isfile(args.repo_url):
-        print(f"Файл репозитория не найден: {args.repo_url}", file=sys.stderr)
-        sys.exit(1)
-    return args
+        '--filter',
+        nargs='?',
+        const='',
+        default='',
+        help="Подстрока для фильтрации пакетов."
+    )
+    return parser.parse_args()
 
 def load_repo(path):
     try:
@@ -55,78 +45,105 @@ def repo_to_forward_graph(repo):
                 graph[d] = []
     return graph
 
-def build_reverse_graph(forward_graph):
-    reverse = {node: [] for node in forward_graph}
-    for pkg, deps in forward_graph.items():
-        for dep in deps:
-            if dep in reverse:
-                reverse[dep].append(pkg)
-            else:
-                reverse[dep] = [pkg]
-    return reverse
+def bfs_collect_edges(graph, start_pkg, max_depth, filter_substring):
+    edges = set()
+    visited_global = set()
 
-def bfs_by_levels(graph, start_pkg, max_depth, filter_substring):
-    if start_pkg not in graph:
-        return {}
-
-    visited = set([start_pkg])
-    result = {}
-
-    def process_level(nodes, depth):
-        if depth > max_depth or not nodes:
+    def visit(pkg, depth, path_set):
+        if depth > max_depth or pkg in path_set:
             return
-        next_level = []
-        for pkg in nodes:
-            raw_neighbors = graph[pkg] 
-            filtered = [
-                n for n in raw_neighbors
-                if not filter_substring or filter_substring not in n
-            ]
-            result[pkg] = filtered
-            for n in filtered:
-                if n not in visited:
-                    visited.add(n)
-                    next_level.append(n)
-        process_level(next_level, depth + 1)
+        if pkg in visited_global and depth >= getattr(visit, '_depths', {}).get(pkg, max_depth + 1):
+            return
 
-    process_level([start_pkg], 0)
-    return result
+        if not hasattr(visit, '_depths'):
+            visit._depths = {}
+        if pkg not in visit._depths or depth < visit._depths[pkg]:
+            visit._depths[pkg] = depth
+
+        visited_global.add(pkg)
+
+        if pkg not in graph:
+            return
+
+        raw_deps = graph[pkg]
+        filtered_deps = [
+            d for d in raw_deps
+            if not filter_substring or filter_substring not in d
+        ]
+
+        for dep in filtered_deps:
+            edges.add((pkg, dep))
+
+        new_path = path_set | {pkg}
+        for dep in filtered_deps:
+            visit(dep, depth + 1, new_path)
+
+    visit(start_pkg, 0, set())
+    return edges
+
+def generate_d2_code(edges):
+    lines = []
+    for src, dst in sorted(edges):
+        lines.append(f"{src} -> {dst}")
+    return "\n".join(lines)
+
+def render_d2_to_svg(d2_content, output_svg):
+    d2_file = output_svg.replace('.svg', '.d2')
+    try:
+        with open(d2_file, 'w', encoding='utf-8') as f:
+            f.write(d2_content)
+        result = subprocess.run(
+            ['d2', d2_file, output_svg],
+            capture_output=True,
+            text=True
+        )
+        if result.returncode != 0:
+            print(f"Ошибка генерации SVG через d2:\n{result.stderr}", file=sys.stderr)
+            print("Сохранён только .d2 файл:", d2_file, file=sys.stderr)
+            return False
+        return True
+    except FileNotFoundError:
+        print("Инструмент 'd2' не найден.", file=sys.stderr)
+        print("Сохранён только .d2 файл:", d2_file, file=sys.stderr)
+        return False
+    except Exception as e:
+        print(f"Ошибка при рендеринге SVG: {e}", file=sys.stderr)
+        return False
 
 def main():
     args = parse_args()
-    repo = load_repo(args.repo_url)
-
-    forward_graph = repo_to_forward_graph(repo)
-
-    all_packages = set(forward_graph.keys())
-    if args.package not in all_packages:
-        print(f"Пакет '{args.package}' не найден в репозитории.", file=sys.stderr)
+    if args.repo_mode == 'remote':
+        print("Режим 'remote' не поддерживается.", file=sys.stderr)
+        sys.exit(1)
+    if not os.path.isfile(args.repo_url):
+        print(f"Файл репозитория не найден: {args.repo_url}", file=sys.stderr)
         sys.exit(1)
 
-    direct = bfs_by_levels(
-        graph=forward_graph,
+    repo = load_repo(args.repo_url)
+    graph = repo_to_forward_graph(repo)
+
+    if args.package not in graph:
+        print(f"Пакет '{args.package}' не найден.", file=sys.stderr)
+        sys.exit(1)
+
+    edges = bfs_collect_edges(
+        graph=graph,
         start_pkg=args.package,
         max_depth=args.max_depth,
         filter_substring=args.filter
     )
 
-    print("Прямые зависимости (пакет -> [от чего зависит]):")
-    for pkg, deps in direct.items():
-        print(f"{pkg} -> {deps}")
-
+    d2_code = generate_d2_code(edges)
+    print("D2-код графа:")
+    print(d2_code)
     print()
 
-    reverse_graph = build_reverse_graph(forward_graph)
-    reverse = bfs_by_levels(
-        graph=reverse_graph,
-        start_pkg=args.package,
-        max_depth=args.max_depth,
-        filter_substring=args.filter
-    )
-
-    print("Обратные зависимости (пакет <- [в ком используется]):")
-    for pkg, dependents in reverse.items():
-        print(f"{pkg} <- {dependents}")
+    success = render_d2_to_svg(d2_code, args.output_file)
+    if success:
+        print(f"SVG сохранён: {args.output_file}")
+    else:
+        d2_path = args.output_file.replace('.svg', '.d2')
+        print(f"Файл D2 сохранён: {d2_path}")
 
 if __name__ == "__main__":
     main()
