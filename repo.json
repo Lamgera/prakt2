@@ -3,6 +3,7 @@
   "B": {"dependencies": ["D"]},
   "C": {"dependencies": ["D"]},
   "D": {"dependencies": ["B"]},
-  "E": {"dependencies": ["F"]},
-  "F": {"dependencies": []}
+  "E": {"dependencies": ["A"]},
+  "F": {"dependencies": ["X"]},
+  "X": {"dependencies": []}
 }
