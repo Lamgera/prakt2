@@ -1,3 +1,4 @@
+# Этап 1
 "args": [
         "--package", "mypkg",
         "--repo-url", "./repo.json",
@@ -5,4 +6,14 @@
         "--output-file", "graph.png",
         "--max-depth", "3",
         "--filter", "utils"
+      ],
+
+  # Этап 2 (заменён только фильтр на пустое значение)
+  "args": [
+        "--package", "mypkg",
+        "--repo-url", "./repo.json",
+        "--repo-mode", "local",
+        "--output-file", "graph.png",
+        "--max-depth", "3",
+        "--filter", ""  
       ],

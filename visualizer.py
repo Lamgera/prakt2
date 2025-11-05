@@ -1,72 +1,73 @@
 import argparse
 import sys
+import json
+import os
 
-def create_parser():
+def parse_args():
     parser = argparse.ArgumentParser(
-        description="Инструмент визуализации графа зависимостей для менеджера пакетов"
+        prog="DependencyGraphVisualizer",
+        description="Этап 2: сбор данных о прямых зависимостях."
     )
+    parser.add_argument('--package', required=True)
+    parser.add_argument('--repo-url', required=True)
+    parser.add_argument('--repo-mode', required=True, choices=['remote', 'local'])
+    parser.add_argument('--output-file', required=True)
+    parser.add_argument('--max-depth', type=int, required=True)
     parser.add_argument(
-        "--package",
-        required=True,
-        help="Имя анализируемого пакета"
+    '--filter',
+    nargs='?',
+    const='',
+    default='',
+    help="Подстрока для фильтрации пакетов (по умолчанию: '')."
     )
-    parser.add_argument(
-        "--repo-url",
-        required=True,
-        help="URL-адрес репозитория или путь к файлу тестового репозитория"
-    )
-    parser.add_argument(
-        "--repo-mode",
-        required=True,
-        help="Режим работы с тестовым репозиторием"
-    )
-    parser.add_argument(
-        "--output-file",
-        required=True,
-        help="Имя сгенерированного файла с изображением графа"
-    )
-    parser.add_argument(
-        "--max-depth",
-        type=int,
-        required=True,
-        help="Максимальная глубина анализа зависимостей"
-    )
-    parser.add_argument(
-        "--filter",
-        required=True,
-        help="Подстрока для фильтрации пакетов"
-    )
-    return parser
+
+    try:
+        args = parser.parse_args()
+        if args.max_depth < 0:
+            print("--max-depth не может быть отрицательным.", file=sys.stderr)
+            sys.exit(1)
+        if args.repo_mode == 'remote':
+            print("Режим 'remote' не поддерживается на этапе 2 (только локальный тестовый репозиторий).", file=sys.stderr)
+            sys.exit(1)
+        if not os.path.isfile(args.repo_url):
+            print(f"Файл репозитория не найден: {args.repo_url}", file=sys.stderr)
+            sys.exit(1)
+        return args
+    except SystemExit:
+        raise
+    except Exception as e:
+        print(f"Ошибка аргументов: {e}", file=sys.stderr)
+        sys.exit(1)
+
+def load_repo(repo_path):
+    try:
+        with open(repo_path, 'r', encoding='utf-8') as f:
+            return json.load(f)
+    except json.JSONDecodeError as e:
+        print(f"Некорректный JSON в файле репозитория: {e}", file=sys.stderr)
+        sys.exit(1)
+    except Exception as e:
+        print(f"Не удалось прочитать файл репозитория: {e}", file=sys.stderr)
+        sys.exit(1)
+
+def get_direct_dependencies(package_name, repo_data):
+    if package_name not in repo_data:
+        print(f"Пакет '{package_name}' не найден в репозитории.", file=sys.stderr)
+        sys.exit(1)
+    deps = repo_data[package_name].get("dependencies", [])
+    if not isinstance(deps, list):
+        print(f"Некорректный формат зависимостей для пакета '{package_name}'.", file=sys.stderr)
+        sys.exit(1)
+    return deps
 
 def main():
-    parser = create_parser()
-    args = parser.parse_args()
+    args = parse_args()
+    repo_data = load_repo(args.repo_url)
+    direct_deps = get_direct_dependencies(args.package, repo_data)
 
-    print("package:", args.package)
-    print("repo_url:", args.repo_url)
-    print("repo_mode:", args.repo_mode)
-    print("output_file:", args.output_file)
-    print("max_depth:", args.max_depth)
-    print("filter:", args.filter)
-
-    errors = []
-    if not args.package:
-        errors.append("Параметр --package не может быть пустым")
-    if not args.repo_url:
-        errors.append("Параметр --repo-url не может быть пустым")
-    if not args.repo_mode:
-        errors.append("Параметр --repo-mode не может быть пустым")
-    if not args.output_file:
-        errors.append("Параметр --output-file не может быть пустым")
-    if args.max_depth is None or args.max_depth < 0:
-        errors.append("Параметр --max-depth должен быть неотрицательным целым числом")
-    if not args.filter:
-        errors.append("Параметр --filter не может быть пустым")
-
-    if errors:
-        for error in errors:
-            print(f"Ошибка: {error}", file=sys.stderr)
-        sys.exit(1)
+    print("Прямые зависимости:")
+    for dep in direct_deps:
+        print(dep)
 
 if __name__ == "__main__":
     main()
