@@ -6,7 +6,7 @@ import os
 def parse_args():
     parser = argparse.ArgumentParser(
         prog="DependencyGraphVisualizer",
-        description="Этап 2: сбор данных о прямых зависимостях."
+        description="Этап 3: построение графа зависимостей с фильтрацией и обработкой циклов."
     )
     parser.add_argument('--package', required=True)
     parser.add_argument('--repo-url', required=True)
@@ -19,55 +19,79 @@ def parse_args():
     const='',
     default='',
     help="Подстрока для фильтрации пакетов (по умолчанию: '')."
-    )
+)
 
+    args = parser.parse_args()
+
+    if args.max_depth < 0:
+        print("--max-depth не может быть отрицательным.", file=sys.stderr)
+        sys.exit(1)
+    if args.repo_mode == 'remote':
+        print("Режим 'remote' не поддерживается. Используйте 'local' с тестовым JSON-файлом.", file=sys.stderr)
+        sys.exit(1)
+    if not os.path.isfile(args.repo_url):
+        print(f"Файл репозитория не найден: {args.repo_url}", file=sys.stderr)
+        sys.exit(1)
+    return args
+
+def load_repo(path):
     try:
-        args = parser.parse_args()
-        if args.max_depth < 0:
-            print("--max-depth не может быть отрицательным.", file=sys.stderr)
-            sys.exit(1)
-        if args.repo_mode == 'remote':
-            print("Режим 'remote' не поддерживается на этапе 2 (только локальный тестовый репозиторий).", file=sys.stderr)
-            sys.exit(1)
-        if not os.path.isfile(args.repo_url):
-            print(f"Файл репозитория не найден: {args.repo_url}", file=sys.stderr)
-            sys.exit(1)
-        return args
-    except SystemExit:
-        raise
-    except Exception as e:
-        print(f"Ошибка аргументов: {e}", file=sys.stderr)
+        with open(path, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+        for pkg, info in data.items():
+            if not isinstance(info.get("dependencies", []), list):
+                raise ValueError(f"Некорректный формат зависимостей для пакета '{pkg}'")
+        return data
+    except (json.JSONDecodeError, ValueError, OSError) as e:
+        print(f"Ошибка чтения репозитория: {e}", file=sys.stderr)
         sys.exit(1)
 
-def load_repo(repo_path):
-    try:
-        with open(repo_path, 'r', encoding='utf-8') as f:
-            return json.load(f)
-    except json.JSONDecodeError as e:
-        print(f"Некорректный JSON в файле репозитория: {e}", file=sys.stderr)
-        sys.exit(1)
-    except Exception as e:
-        print(f"Не удалось прочитать файл репозитория: {e}", file=sys.stderr)
-        sys.exit(1)
+def bfs_collect(repo, start_pkg, max_depth, filter_substring):
+    graph = {}
+    visited = set()
+    visited.add(start_pkg)
+    level_nodes = [start_pkg]
 
-def get_direct_dependencies(package_name, repo_data):
-    if package_name not in repo_data:
-        print(f"Пакет '{package_name}' не найден в репозитории.", file=sys.stderr)
-        sys.exit(1)
-    deps = repo_data[package_name].get("dependencies", [])
-    if not isinstance(deps, list):
-        print(f"Некорректный формат зависимостей для пакета '{package_name}'.", file=sys.stderr)
-        sys.exit(1)
-    return deps
+    def process_level(nodes, depth):
+        if depth > max_depth or not nodes:
+            return
+        next_level = []
+        for pkg in nodes:
+            if pkg not in repo:
+                continue
+            raw_deps = repo[pkg].get("dependencies", [])
+            filtered_deps = [
+                d for d in raw_deps
+                if not filter_substring or filter_substring not in d
+            ]
+            graph[pkg] = filtered_deps
+            for dep in filtered_deps:
+                if dep not in visited:
+                    visited.add(dep)
+                    next_level.append(dep)
+        process_level(next_level, depth + 1)
+
+    process_level(level_nodes, 0)
+    return graph
 
 def main():
     args = parse_args()
-    repo_data = load_repo(args.repo_url)
-    direct_deps = get_direct_dependencies(args.package, repo_data)
+    repo = load_repo(args.repo_url)
 
-    print("Прямые зависимости:")
-    for dep in direct_deps:
-        print(dep)
+    if args.package not in repo:
+        print(f"Пакет '{args.package}' не найден в репозитории.", file=sys.stderr)
+        sys.exit(1)
+
+    graph = bfs_collect(
+        repo=repo,
+        start_pkg=args.package,
+        max_depth=args.max_depth,
+        filter_substring=args.filter
+    )
+
+    print("Граф зависимостей:")
+    for pkg, deps in graph.items():
+        print(f"{pkg} -> {deps}")
 
 if __name__ == "__main__":
     main()

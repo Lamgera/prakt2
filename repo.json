@@ -1,11 +1,8 @@
 {
-  "mypkg": {
-    "dependencies": ["click", "requests"]
-  },
-  "click": {
-    "dependencies": []
-  },
-  "requests": {
-    "dependencies": ["urllib3", "certifi"]
-  }
+  "A": {"dependencies": ["B", "C"]},
+  "B": {"dependencies": ["D"]},
+  "C": {"dependencies": ["D"]},
+  "D": {"dependencies": ["B"]},
+  "E": {"dependencies": ["F"]},
+  "F": {"dependencies": []}
 }

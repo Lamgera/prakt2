@@ -10,7 +10,7 @@
       "request": "launch",
       "program": "${file}",
       "args": [
-        "--package", "mypkg",
+        "--package", "A",
         "--repo-url", "./repo.json",
         "--repo-mode", "local",
         "--output-file", "graph.png",
